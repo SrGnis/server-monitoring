@@ -1,0 +1,134 @@
+///////////////////////////////////////////////////////////////////////////////
+// Configuration file
+local.file "endpoints" {
+    // The endpoints file is used to define the endpoints, credentials and options
+    // for the Alloy export to.
+    filename = "/etc/alloy/endpoints.json"
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Metrics scraping
+
+// Scrape Tempo, Mimir, Phlare and Loki
+// We use the prometheus.scrape component and give this a unique label.
+prometheus.scrape "monitor_infra" {
+    // The targets array allows us to specify which service targets to scrape from.
+    // Define the address to scrape from, and add a 'group' and 'service' label for each target.
+    targets = [
+        {"__address__" = "localhost:9009", group = "infrastructure", service = "mimir"},
+        {"__address__" = "localhost:3100", group = "infrastructure", service = "loki"},
+        {"__address__" = "localhost:3000", group = "infrastructure", service = "grafana"},
+    ]
+
+    // Scrape all of these services every 15 seconds.
+    scrape_interval = "15s"
+    // Send the metrics to the prometheus remote write receiver for exporting to Mimir.
+    forward_to = [prometheus.remote_write.mimir.receiver]
+    // The job name to add to the scraped metrics.
+    job_name = "monitor_infra"
+}
+
+
+// Scrape the local Alloy itself.
+prometheus.scrape "alloy" {
+    // Only one target, the Alloy, it's part of the 'infrastructure' group.
+    targets = [{"__address__" = "localhost:12345", group = "infrastructure", service = "alloy"}]
+    // Send the metrics to the prometheus remote write receiver for exporting to Mimir.
+    forward_to = [prometheus.remote_write.mimir.receiver]
+    // Attach job name to the metrics.
+    job_name = "alloy"
+}
+
+// The Alloy exports everything, using an empty block.
+prometheus.exporter.unix "default" {
+    rootfs_path = "/host"
+}
+
+// This component scrapes the Unix exporter metrics generated above.
+prometheus.scrape "unix" {
+    // Use the Unix prometheus exporter as the target.
+    targets = prometheus.exporter.unix.default.targets
+    // Send the metrics to the prometheus remote write receiver for exporting to Mimir.
+    forward_to = [prometheus.remote_write.mimir.receiver]
+    // Attach job name to the metrics.
+    job_name = "node_exporter"
+}
+
+// The prometheus.remote_write component defines an endpoint for remotely writing metrics to.
+// In this case, our locally running Mimir service.
+prometheus.remote_write "mimir" {
+    // The endpoint is the Mimir service.
+    endpoint {
+        url = json_path(local.file.endpoints.content, ".metrics.url")[0]
+
+        // Basic auth credentials. If the endpoint is not TLS, whilst sent, these will be ignored.
+        basic_auth {
+            username = json_path(local.file.endpoints.content, ".metrics.basicAuth.username")[0]
+            password = json_path(local.file.endpoints.content, ".metrics.basicAuth.password")[0]
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Logging
+
+local.file_match "local_files" {
+  path_targets = [
+    {__path__ = "/host/var/log/boot.log", service = "boot", instance = constants.hostname},
+    {__path__ = "/host/var/log/kern.log", service = "kern", instance = constants.hostname},
+    {__path__ = "/host/var/log/syslog", service = "syslog", instance = constants.hostname},
+    {__path__ = "/host/var/log/auth.log", service = "auth", instance = constants.hostname},
+    {__path__ = "/host/var/log/faillog", service = "faillog", instance = constants.hostname},
+    {__path__ = "/host/var/log/cron", service = "cron", instance = constants.hostname},
+    {__path__ = "/host/var/log/dpkg.log", service = "dpkg", instance = constants.hostname},
+    {__path__ = "/host/var/log/apt/*.log", service = "apt", instance = constants.hostname},
+    {__path__ = "/host/var/log/apache2/*.log", service = "apache", instance = constants.hostname},
+  ]
+  sync_period = "5s"
+}
+
+loki.source.file "log_scrape" {
+  targets    = local.file_match.local_files.targets
+  forward_to = [loki.write.loki.receiver]
+  tail_from_end = true
+}
+
+loki.write "loki" {
+  endpoint {
+        url = json_path(local.file.endpoints.content, ".logs.url")[0]
+
+        // Basic auth credentials. If the endpoint is not TLS, whilst sent, these will be ignored.
+        basic_auth {
+            username = json_path(local.file.endpoints.content, ".logs.basicAuth.username")[0]
+            password = json_path(local.file.endpoints.content, ".logs.basicAuth.password")[0]
+        }
+    }
+}
+
+
+// Prototype of automatic log relabeling NOTE: only works with one level folders
+
+// local.file_match "local_files" {
+//   path_targets = [
+//     {__path__ = "/host/var/log/**/*.log", instance = constants.hostname},
+//   ]
+//   sync_period = "5s"
+// }
+
+// loki.source.file "log_scrape" {
+//   targets    = local.file_match.local_files.targets
+//   forward_to = [loki.relabel.log_relabel.receiver]
+//   tail_from_end = true
+// }
+
+// loki.relabel "log_relabel" {
+//   forward_to = [loki.write.loki.receiver]
+
+//   rule {
+//     action = "replace"
+//     source_labels = ["filename"]
+//     regex = "/host/var/log/(.+)/.*log"
+//     target_label = "service"
+//     replacement = "$1"
+//   }
+// }

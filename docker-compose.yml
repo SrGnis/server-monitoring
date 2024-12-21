@@ -1,0 +1,80 @@
+name: server-monitoring
+volumes:
+  grafana-data:
+    driver: local
+  loki-data:
+    driver: local
+  mimir-data:
+    driver: local
+
+services:
+  alloy:
+    image: grafana/alloy:v1.5.1
+    profiles:
+      - all
+      - alloy
+    restart: unless-stopped
+    volumes:
+      - "./alloy/config.alloy:/etc/alloy/config.alloy"
+      - "./alloy/endpoints.json:/etc/alloy/endpoints.json"
+      - '/:/host:ro,rslave'
+    network_mode: host
+    pid: host
+    command: [
+      "run",
+      "--server.http.listen-addr=0.0.0.0:12345",
+      "/etc/alloy/config.alloy",
+    ]
+
+  # The Grafana dashboarding server.
+  grafana:
+    image: grafana/grafana:11.4.0
+    profiles:
+      - all
+      - grafana
+    restart: unless-stopped
+    volumes:
+      - "./grafana/definitions:/var/lib/grafana/dashboards"
+      - "./grafana/provisioning:/etc/grafana/provisioning"
+      - "./grafana/config/grafana.ini:/usr/local/etc/grafana/grafana.ini"
+      - "grafana-data:/var/lib/grafana"
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_FEATURE_TOGGLES_ENABLE=flameGraph traceqlSearch traceQLStreaming correlations metricsSummary traceqlEditor traceToMetrics traceToProfiles datatrails
+      - GF_INSTALL_PLUGINS=grafana-lokiexplore-app
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+
+  # The Loki service stores logs sent to it, and takes queries from Grafana
+  # to visualise those logs.
+  loki:
+    image: grafana/loki:3.2.2
+    profiles:
+      - all
+      - loki
+    restart: unless-stopped
+    command: ["--pattern-ingester.enabled=true", "-config.file=/etc/loki/loki.yaml"]
+    ports:
+      - "3100:3100"
+    volumes:
+      - "./loki/loki.yaml:/etc/loki/loki.yaml"
+      - "loki-data:/loki"
+
+  # The Mimir service stores metrics sent to it, and takes queries from Grafana
+  # to visualise those logs.
+  mimir:
+    image: grafana/mimir:2.13.1
+    profiles:
+      - all
+      - mimir
+    restart: unless-stopped
+    command: ["-ingester.native-histograms-ingestion-enabled=true", "-config.file=/etc/mimir.yaml"]
+    ports:
+      - "9009:9009"
+    volumes:
+      - "./mimir/mimir.yaml:/etc/mimir.yaml"
+      - "mimir-data:/data"

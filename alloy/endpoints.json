@@ -1,0 +1,16 @@
+{
+    "metrics": {
+        "url": "http://localhost:9009/api/v1/push",
+        "basicAuth": {
+            "username": "",
+            "password": ""
+        }
+    },
+    "logs": {
+        "url": "http://localhost:3100/loki/api/v1/push",
+        "basicAuth": {
+            "username": "",
+            "password": ""
+        }
+    }
+}
