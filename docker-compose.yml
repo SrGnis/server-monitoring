@@ -20,6 +20,8 @@ services:
       - '/:/host:ro,rslave'
     network_mode: host
     pid: host
+    security_opt:
+      - seccomp:unconfined
     command: [
       "run",
       "--server.http.listen-addr=0.0.0.0:12345",
