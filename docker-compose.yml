@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 volumes:
   grafana-data:
@@ -9,28 +9,9 @@ volumes:
     driver: local
 
 services:
-  alloy:
-    image: grafana/alloy:v1.5.1
-    profiles:
-      - all
-      - alloy
-    restart: unless-stopped
-    volumes:
-      - "./alloy/config.alloy:/etc/alloy/config.alloy"
-      - "./alloy/endpoints.json:/etc/alloy/endpoints.json"
-      - '/:/host:ro,rslave'
-    network_mode: host
-    pid: host
-    privileged: true
-    command: [
-      "run",
-      "--server.http.listen-addr=0.0.0.0:12345",
-      "/etc/alloy/config.alloy",
-    ]
-
   # The Grafana dashboarding server.
   grafana:
-    image: grafana/grafana:11.4.0
+    image: grafana/grafana:latest
     profiles:
       - all
       - grafana
@@ -43,7 +24,7 @@ services:
     ports:
       - "3000:3000"
     command:
-      - "--config=/usr/local/etc/grafana/grafana.ini"   
+      - "--config=/usr/local/etc/grafana/grafana.ini"
     environment:
       - GF_FEATURE_TOGGLES_ENABLE=flameGraph traceqlSearch traceQLStreaming correlations metricsSummary traceqlEditor traceToMetrics traceToProfiles datatrails
       - GF_INSTALL_PLUGINS=grafana-lokiexplore-app
@@ -56,12 +37,13 @@ services:
   # The Loki service stores logs sent to it, and takes queries from Grafana
   # to visualise those logs.
   loki:
-    image: grafana/loki:3.2.2
+    image: grafana/loki:latest
     profiles:
       - all
       - loki
     restart: unless-stopped
-    command: ["--pattern-ingester.enabled=true", "-config.file=/etc/loki/loki.yaml"]
+    command:
+      ["--pattern-ingester.enabled=true", "-config.file=/etc/loki/loki.yaml"]
     ports:
       - "3100:3100"
     volumes:
@@ -71,12 +53,16 @@ services:
   # The Mimir service stores metrics sent to it, and takes queries from Grafana
   # to visualise those logs.
   mimir:
-    image: grafana/mimir:2.13.1
+    image: grafana/mimir:latest
     profiles:
       - all
       - mimir
     restart: unless-stopped
-    command: ["-ingester.native-histograms-ingestion-enabled=true", "-config.file=/etc/mimir.yaml"]
+    command:
+      [
+        "-ingester.native-histograms-ingestion-enabled=true",
+        "-config.file=/etc/mimir.yaml",
+      ]
     ports:
       - "9009:9009"
     volumes:
